@@ -436,6 +436,10 @@ class Trainer:
                 )
 
         self.args = args
+
+        #edit made here
+        self.max_eval_steps = getattr(args, "max_eval_steps", None) if args is not None else None
+        
         self.compute_loss_func = compute_loss_func
         # Seed must be set before instantiating the model when using model
         enable_full_determinism(self.args.seed) if self.args.full_determinism else set_seed(self.args.seed)
@@ -4243,10 +4247,18 @@ class Trainer:
             shutil.rmtree(checkpoint, ignore_errors=True)
 
     def evaluate(
-        self,
-        eval_dataset: Optional[Union[Dataset, dict[str, Dataset]]] = None,
-        ignore_keys: Optional[list[str]] = None,
-        metric_key_prefix: str = "eval",
+        #self,
+        #eval_dataset: Optional[Union[Dataset, dict[str, Dataset]]] = None,
+        #ignore_keys: Optional[list[str]] = None,
+        #metric_key_prefix: str = "eval",
+
+        #edit made here vvvvv (replacing above commented lines with below)
+        
+        self, 
+        eval_dataset=None, 
+        ignore_keys=None, 
+        metric_key_prefix: str = "eval", 
+        max_eval_steps: Optional[int] = None,
     ) -> dict[str, float]:
         """
         Run evaluation and returns metrics.
@@ -4304,6 +4316,10 @@ class Trainer:
         self._memory_tracker.start()
 
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
+
+        #edit made here v
+        effective_max_eval_steps = self.max_eval_steps if max_eval_steps is None else max_eval_steps
+
         if self.is_fsdp_xla_v2_enabled:
             eval_dataloader = tpu_spmd_dataloader(eval_dataloader)
 
@@ -4317,6 +4333,9 @@ class Trainer:
             prediction_loss_only=True if self.compute_metrics is None else None,
             ignore_keys=ignore_keys,
             metric_key_prefix=metric_key_prefix,
+
+            #edit made here v
+            max_steps=effective_max_eval_steps,
         )
 
         total_batch_size = self.args.eval_batch_size * self.args.world_size
@@ -4415,6 +4434,9 @@ class Trainer:
         prediction_loss_only: Optional[bool] = None,
         ignore_keys: Optional[list[str]] = None,
         metric_key_prefix: str = "eval",
+
+        #edit made here v
+        max_steps: Optional[int] = None,
     ) -> EvalLoopOutput:
         """
         Prediction/evaluation loop, shared by `Trainer.evaluate()` and `Trainer.predict()`.
@@ -4562,6 +4584,15 @@ class Trainer:
 
                 del losses, logits, labels, inputs
                 torch.cuda.empty_cache()
+            
+            #edit made here vvv
+            if not hasattr(self, "_eval_steps_count"):
+                self._eval_steps_count = 0
+            self._eval_steps_count += 1
+
+            if max_steps is not None and self._eval_steps_count >= max_steps:
+                # stop early — no crash, just break out of the loop
+                break
 
         # After all calls to `.gather_function`, reset to `gather_for_metrics`:
         self.gather_function = self.accelerator.gather_for_metrics
